@@ -9,14 +9,12 @@ exports.createBook = async (req, res, next) => {
   delete bookObject._id;
   delete bookObject._userId;
   // on supprime deux champs de cet objet qui nous ais renvoyé
-  // l'id est généré automatiquement par notre basse de donnée
+  // l'id est généré authomatiquement par notre basse de donnée
   // on ne fait pas confiance au client donc on supprime l'userID et on va remplacer l'userId par celui du token
 
-  const imagePath = `${req.file.destination}/${req.file.filename}`;
-  // stocker le chemin de l'image téléchargée à partir de la requête
   try {
     // Redimensionner l'image
-    const resizedImageBuffer = await sharp(imagePath)
+    const resizedImageBuffer = await sharp(req.file.path)
       .resize({ width: 800 })
       .toBuffer();
     // Enregistrer l'image redimensionnée
@@ -29,15 +27,27 @@ exports.createBook = async (req, res, next) => {
       // opérateur de déversement (...) = pour déverser les propriétés de bookObject dans l'objet du livre
       userId: req.auth.userId,
       // on remplace comme dit plus le suser id avec token de authentication
-      imageUrl: `${req.protocol}://${req.get('host')}/images/${
+      imageUrl: `${req.protocol}://${req.get('host')}/images/resized_${
         // multer nous passe que le nom de fichier donc on doit le générer nous même
         req.file.filename
       }`,
     });
 
     console.log(book);
-    // maintenant on sauvegarde cet objet et on gére l'erreur et le succés
+    // sauvegarde de l'objet
     await book.save();
+
+    // suppression de l'image non redimensionnée
+    fs.unlink(req.file.path, (err) => {
+      if (err) {
+        console.error(
+          "Erreur lors de la suppression de l'image originale :",
+          err
+        );
+      } else {
+        console.log('Image originale supprimée');
+      }
+    });
 
     res.status(201).json({ message: 'Objet enregistré !' });
   } catch (error) {
@@ -62,43 +72,98 @@ exports.getOneBook = (req, res, next) => {
     });
 };
 
-exports.modifyBook = (req, res, next) => {
-  // d'abord, prendre en compte deux possibilités : l'utilisateur a mis à jour l'image ou pas.
+exports.modifyBook = async (req, res, next) => {
+  // D'abord, prendre en compte deux possibilités : l'utilisateur a mis à jour l'image ou pas.
   // Si oui : nous recevrons l'élément form-data et le fichier
   // Si non : nous recevrons uniquement les données JSON.
-  const bookObject = req.file
-    ? // objet file (image) ou non ? Si oui, on recup notre objet en parsaant la chaine de caractére et en recréant l'url de l'image comme pécédemment
-      {
-        ...JSON.parse(req.body.book),
-        imageUrl: `${req.protocol}://${req.get('host')}/images/${
-          req.file.filename
-        }`,
-      }
-    : { ...req.body };
-  // si pas de fichier de transmis, on récupére simplpment l'objet dans le corps de la requête
+  try {
+    // Vérifier si une nouvelle image a été téléchargée
+    const isImageUploaded = req.file ? true : false;
 
-  delete bookObject._userId;
-  // on supprime de nouveau l'user id pour sécurité
-  Book.findOne({ _id: req.params.id })
+    const bookObject = isImageUploaded
+      ? {
+          // objet file (image) ou non ? Si oui, on recup notre objet en parsaant la chaine de caractére et en recréant l'url de l'image comme pécédemment
+          ...JSON.parse(req.body.book),
+          imageUrl: `${req.protocol}://${req.get('host')}/images/resized_${
+            req.file.filename
+          }`,
+        }
+      : { ...req.body };
+    // si pas de fichier de transmis, on récupére simplpment l'objet dans le corps de la requête
+
+    delete bookObject._userId;
+    // on supprime de nouveau l'user id pour sécurité
+    const book = await Book.findOne({ _id: req.params.id });
     // méthode findOne pour trouver livre dans bdd : critère de recherche est l'ID du livre
-    .then((book) => {
-      if (book.userId != req.auth.userId) {
-        // vérif bon utilisateur (compare user id du token et celui de notre basse)
-        res.status(401).json({ message: 'Not authorized' });
-      } else {
-        // utilisateur authorisé à modifié avec méthode updateOne pour mettre à jour le livre dans la basse de données
-        Book.updateOne(
-          { _id: req.params.id },
-          { ...bookObject, _id: req.params.id },
-          { new: true }
-        )
-          .then(() => res.status(200).json({ message: 'Objet modifié!' }))
-          .catch((error) => res.status(401).json({ error }));
+    if (!book) {
+      return res.status(404).json({ message: 'Livre non trouvé' });
+    } // on vérifie que le livre existe
+
+    if (book.userId != req.auth.userId) {
+      return res.status(401).json({ message: 'Non autorisé' });
+    } // on vérifie que c'est le bon utilisateur (compare user id du token et celui de notre basse)
+
+    if (isImageUploaded) {
+      // on redimensionne l'image
+      const resizedImageBuffer = await sharp(req.file.path)
+        .resize({ width: 800 })
+        .toBuffer();
+      // Enregistrer l'image redimensionnée
+      const resizedImagePath = `${req.file.destination}/resized_${req.file.filename}`;
+      await fs.promises.writeFile(resizedImagePath, resizedImageBuffer);
+
+      bookObject.imageUrl = `${req.protocol}://${req.get(
+        'host'
+      )}/images/resized_${req.file.filename}`;
+    } // multer nous passe que le nom de fichier donc on doit générer l'url nous même
+
+    await Book.updateOne(
+      // on met à jour le livre avec les nouvelles modifications
+      { _id: req.params.id },
+      { ...bookObject, _id: req.params.id }
+    );
+
+    const newImageFilename = isImageUploaded ? req.file.filename : null;
+    // stocker nom fichier de la nouvelle image si celle-ci a été ajoutée (évite erreur suppression ancienne image)
+    if (isImageUploaded && book.imageUrl) {
+      // vérif si newImageFilename + url d'image à book existent, pour s'assurer de comparer ancienne et nouvelle images
+      const filename = book.imageUrl.split('/images/')[1];
+      // extraction du nom du fichier grâce a split
+      if (filename !== newImageFilename) {
+        // vérif que les deux noms sont différents, assurant encore une fois qu'une nouvelle image à été ajoutée
+        fs.unlink(`images/${filename}`, (err) => {
+          // supression de l'ancienne image filename
+          if (err) {
+            console.error(
+              "Erreur lors de la suppression de l'ancienne image :",
+              err
+            );
+          } else {
+            console.log('Ancienne image supprimée');
+          }
+        });
       }
-    })
-    .catch((error) => {
-      res.status(400).json({ error });
-    });
+    }
+
+    // on supprime l'image original pour garder uniquement celle redimensionnée
+    if (isImageUploaded) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) {
+          console.error(
+            "Erreur lors de la suppression de l'image originale :",
+            err
+          );
+        } else {
+          console.log('Image originale supprimée');
+        }
+      });
+    }
+
+    res.status(200).json({ message: 'Objet modifié !' });
+  } catch (error) {
+    console.error('Erreur lors de la modification du livre :', error);
+    res.status(400).json({ error });
+  }
 };
 
 exports.deleteBook = (req, res, next) => {
@@ -155,79 +220,29 @@ exports.getBestRating = (req, res, next) => {
 
 exports.addRating = async (req, res, next) => {
   const ratingObject = req.body;
-  ratingObject.grade = ratingObject.rating;
-  delete ratingObject.rating;
-  // const { userId, rating } = req.body;
+  const userId = ratingObject.userId;
+  const rating = ratingObject.rating;
 
   try {
-    // if (book.rating.find((r) => r.userId === userId)) {
-    //   return res.status(400).json({ message: 'Vous avez déjà noté ce livre.' });
-    // }
-    const updatedBook = await Book.findOneAndUpdate(
-      { _id: req.params.id },
-      { $push: { ratings: ratingObject }, $inc: { totalRatings: 1 } },
-      // mise à jour pour ajouter la note (ratingObject) au tableau ratings du lire avec l'id indiqué par prams.id
-      //  + mise a jour avec opérateur inc pour augmenter titaRatings du livre de 1 (nombre total d'évaluation du livre)
-      { new: true }
-    );
+    const book = await Book.findOne({ _id: req.params.id });
 
-    // calcul de la note moyenne du livre en itérant sur le tableau ratings
-    let averageRates = 0;
-    for (let i = 0; i < updatedBook.ratings.length; i++) {
-      averageRates += updatedBook.ratings[i].grade;
+    // Vérifier si l'utilisateur a déjà noté le livre
+    if (book.ratings.find((r) => r.userId === userId)) {
+      return res.status(400).json({ message: 'Vous avez déjà noté ce livre.' });
     }
-    averageRates /= updatedBook.ratings.length;
 
-    const bookWithAverageRating = await Book.findOneAndUpdate(
-      { _id: req.params.id },
-      { averageRating: averageRates },
-      // mise à jour note moyenne (averageRating) du livre avec la nouvelle note moyenne calculée
-      { new: true }
-    );
+    book.ratings.push({ userId, grade: rating });
 
-    console.log(bookWithAverageRating);
+    let rates = 0;
+    for (let i = 0; i < book.ratings.length; i++) {
+      rates += book.ratings[i].grade;
+    }
+    book.averageRating = Math.round(rates / book.ratings.length);
 
-    return res.status(201).json({
-      _id: req.params.id,
-      book: bookWithAverageRating,
-    });
+    await book.save();
+
+    res.status(200).json(book);
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 };
-
-// exports.addRating = (req, res, next) => {
-//   const ratingObject = req.body;
-//   ratingObject.grade = ratingObject.rating;
-//   delete ratingObject.rating;
-
-//   Book.findOneAndUpdate(
-//     { _id: req.params.id },
-//     { $push: { ratings: ratingObject }, $inc: { totalRatings: 1 } },
-//     { new: true }
-//   )
-//     .then((updatedBook) => {
-//       let averageRates = 0;
-//       for (let i = 0; i < updatedBook.ratings.length; i++) {
-//         averageRates += updatedBook.ratings[i].grade;
-//       }
-//       averageRates /= updatedBook.ratings.length;
-
-//       return Book.findOneAndUpdate(
-//         { _id: req.params.id },
-//         { averageRating: averageRates },
-//         { new: true }
-//       ).then((bookWithAverageRating) => {
-//         console.log(bookWithAverageRating);
-//         // console.log(_id);
-
-//         return res.status(201).json({
-//           book: bookWithAverageRating,
-//           _id: req.params.id,
-//         });
-//       });
-//     })
-//     .catch((error) => {
-//       res.status(401).json({ error: error.message });
-//     });
-// };

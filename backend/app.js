@@ -9,7 +9,8 @@ const path = require('path');
 
 mongoose
   .connect(
-    'mongodb+srv://test:test@cluster0.yjc4vpz.mongodb.net/?retryWrites=true&w=majority',
+    process.env.MONGO,
+    // 'mongodb+srv://test:test@cluster0.yjc4vpz.mongodb.net/?retryWrites=true&w=majority',
     {
       useNewUrlParser: true,
       useUnifiedTopology: true,
