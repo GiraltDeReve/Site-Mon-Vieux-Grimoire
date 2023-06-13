@@ -224,21 +224,37 @@ exports.addRating = async (req, res, next) => {
   const rating = ratingObject.rating;
 
   try {
+    // Recherche du livre à partir de son ID
     const book = await Book.findOne({ _id: req.params.id });
+
+    if (!book) {
+      return res.status(404).json({ message: 'Livre non trouvé' });
+    } // on vérifie que le livre existe
 
     // Vérifier si l'utilisateur a déjà noté le livre
     if (book.ratings.find((r) => r.userId === userId)) {
       return res.status(400).json({ message: 'Vous avez déjà noté ce livre.' });
     }
 
+    // Vérifier si la notation est valide (entre 1 et 5 étoiles)
+    if (rating < 1 || rating > 5) {
+      return res
+        .status(400)
+        .json({ message: 'La notation doit être entre 1 et 5 étoiles.' });
+    }
+
+    // Ajouter la nouvelle évaluation à la liste
     book.ratings.push({ userId, grade: rating });
 
+    // Calcul somme totale de toutes les évaluations
     let rates = 0;
     for (let i = 0; i < book.ratings.length; i++) {
       rates += book.ratings[i].grade;
     }
+    // calcul somme moyenne des évaluations + arrondis résultat avec math.round
     book.averageRating = Math.round(rates / book.ratings.length);
 
+    // modifs enregistrer en basse de données
     await book.save();
 
     res.status(200).json(book);
