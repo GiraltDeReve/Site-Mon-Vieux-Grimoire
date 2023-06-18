@@ -5,7 +5,7 @@ const sharp = require('sharp');
 exports.createBook = async (req, res, next) => {
   console.log(req.body);
   const bookObject = JSON.parse(req.body.book);
-  // Avec fonction parse de JSON on parse l'objet requet parce que maintenant cet objet nous ais envoyé en chaine de caractére
+  // Avec fonction parse de JSON on parse l'objet requet parce que maintenant cet objet nous ais envoyé en chaine de caractére Json et non objet JS
   delete bookObject._id;
   delete bookObject._userId;
   // on supprime deux champs de cet objet qui nous ais renvoyé
@@ -22,11 +22,11 @@ exports.createBook = async (req, res, next) => {
     await fs.promises.writeFile(resizedImagePath, resizedImageBuffer);
 
     const book = new Book({
-      // on créé l'obejt avec notre nouveau book
+      // on créé l'objet avec notre nouveau book
       ...bookObject,
       // opérateur de déversement (...) = pour déverser les propriétés de bookObject dans l'objet du livre
       userId: req.auth.userId,
-      // on remplace comme dit plus le suser id avec token de authentication
+      // on remplace le user id avec token de authentication
       imageUrl: `${req.protocol}://${req.get('host')}/images/resized_${
         // multer nous passe que le nom de fichier donc on doit le générer nous même
         req.file.filename
@@ -58,7 +58,7 @@ exports.createBook = async (req, res, next) => {
 
 exports.getOneBook = (req, res, next) => {
   Book.findOne({
-    // méthode findOne permet de trouver un seul document correspondant aux critères de recherche
+    // méthode mangoose findOne permet de trouver un seul document correspondant aux critères de recherche
     _id: req.params.id,
     //  = critére de recherche
   })
@@ -73,16 +73,15 @@ exports.getOneBook = (req, res, next) => {
 };
 
 exports.modifyBook = async (req, res, next) => {
-  // D'abord, prendre en compte deux possibilités : l'utilisateur a mis à jour l'image ou pas.
-  // Si oui : nous recevrons l'élément form-data et le fichier
-  // Si non : nous recevrons uniquement les données JSON.
+  // Si l'utilisateur a mis à jour l'image: on reçoit l'élément form-data et le fichier
+  // Sinon : uniquement les données JSON.
   try {
     // Vérifier si une nouvelle image a été téléchargée
     const isImageUploaded = req.file ? true : false;
 
     const bookObject = isImageUploaded
       ? {
-          // objet file (image) ou non ? Si oui, on recup notre objet en parsaant la chaine de caractére et en recréant l'url de l'image comme pécédemment
+          // objet file (image) ou non ? Si oui, on recup notre objet en parsant la chaine de caractére et en recréant l'url de l'image comme pécédemment
           ...JSON.parse(req.body.book),
           imageUrl: `${req.protocol}://${req.get('host')}/images/resized_${
             req.file.filename

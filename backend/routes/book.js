@@ -14,5 +14,4 @@ router.delete('/:id', auth, bookCtrl.deleteBook);
 router.post('/:id/rating', auth, bookCtrl.addRating);
 
 // premiérement vérif de l'authentification puis ensuite multer pour envoi fichiers
-// en rajoutant multer, le format de la requpete change, donc on doit modifier les routes dans le fichier book de controlers (les routes)
 module.exports = router;
