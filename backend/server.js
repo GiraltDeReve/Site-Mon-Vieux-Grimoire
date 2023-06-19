@@ -2,7 +2,7 @@ const http = require('http');
 // pour importer le paquet http qui permet les requêtes
 const app = require('./app');
 // on importe notre application faite avec express qui vient du fichier app.js, on va ensuite la mettre en paramétre de create server maintenant que l'app est faite
-
+require('dotenv').config();
 // ----------------------VERSION PLUS STABLE---------------------
 
 // FONCTION NORMALIZEPORT : renvoie un port valide, qu'il soit fourni sous la forme d'un numéro ou d'une chaîne
@@ -17,7 +17,7 @@ const normalizePort = (val) => {
   }
   return false;
 };
-const port = normalizePort(process.env.PORT || '4000');
+const port = normalizePort(process.env.PORT);
 app.set('port', port);
 
 // FONCTION ERRORHANDLER : recherche les différentes erreurs et les gère de manière appropriée. Elle est ensuite enregistrée dans le serveur
