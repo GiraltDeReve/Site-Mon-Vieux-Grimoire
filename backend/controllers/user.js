@@ -5,11 +5,22 @@ require('dotenv').config();
 const User = require('../models/users');
 
 exports.signup = (req, res, next) => {
+  // Vérification de la validité de l'adresse e-mail
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email.test(req.body.email)) {
+    return res.status(400).json({ error: 'Adresse e-mail invalide.' });
+  }
+
+  // Vérification de la force du mot de passe
+  const password = /^(?=.*[a-z])(?=.*\d).{8,}$/;
+  if (!password.test(req.body.password)) {
+    return res.status(400).json({ error: 'Mot de passe faible.' });
+  }
+
   bcrypt
     // fonction asynchrone qui renvoie une Promise dans laquelle nous recevons le hash généré ;
-    .hash(req.body.password, 10)
-    // fonction pour hasher(crypter) un mdp
     // 10 correspond au nombre de fois où on fait tourner l'algorithme pour faire cryper le mdp
+    .hash(req.body.password, 10)
     .then((hash) => {
       // nous créons un utilisateur et l'enregistrons dans la base de données
       const user = new User({
